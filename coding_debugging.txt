@@ -1,0 +1,708 @@
+﻿
+=================================================================================
+获取时间：本周、本月、上个月、前三个月     Calendar
+	/**
+	 * 设置筛选时间
+	 * @param qv
+	 */
+	private void getQueryVoOrderDate(QueryVo qv){
+		if(StringUtils.isBlank(qv.getOrderDate())) {
+			qv.setOrderDate("week");
+		}
+		
+		if(StringUtils.isNotBlank(qv.getOrderDate())) {
+			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+			Calendar cal = Calendar.getInstance();//获取当前日期 
+			Date d = new Date();
+			String startDate = sdf.format(d);
+			String endDate = sdf.format(d);
+			if("week".equals(qv.getOrderDate())){//本周
+				//cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY);
+				int n = 0;
+				if(cal.get(Calendar.DAY_OF_WEEK)==1){
+					n = -6;
+				}else{
+					n = 2-cal.get(Calendar.DAY_OF_WEEK);
+				}
+				cal.add(Calendar.DAY_OF_WEEK, n);
+				startDate = sdf.format(cal.getTime());
+			}
+			if("thismonth".equals(qv.getOrderDate())){//本月
+				cal.set(Calendar.DAY_OF_MONTH, 1);//设置当前月第一天
+				startDate = sdf.format(cal.getTime());
+			}
+			if("lastmonth".equals(qv.getOrderDate())){//上个月
+				cal.set(Calendar.DAY_OF_MONTH, 0);//获取上一个月的最后一天
+				endDate = sdf.format(cal.getTime());
+				cal.add(Calendar.MONTH, 0);
+				cal.set(Calendar.DAY_OF_MONTH, 1);//获取上个月的第一天
+				startDate = sdf.format(cal.getTime());
+			}
+			/*if("threemonth".equals(qv.getOrderDate())){//近三个月
+				cal.add(Calendar.MONTH, -3);
+				cal.set(Calendar.DAY_OF_MONTH, 1);
+				startDate = sdf.format(cal.getTime());
+			}*/
+			qv.setStartDate(startDate+" 00:00:00");
+			qv.setEndDate(endDate+" 23:59:59");
+		}
+	}
+	
+=================================================================================
+SQL语句条件拼接
+	/**
+	 * 派工单页面，控制了安装类型，明细产品要一致，排除了税控和企业共存的情况
+	 * 主表产品要和明细第一列产品一致，排除了主表产品不正确的情况
+	 * 所以直接通过主表产品来判断企业安装和税控安装
+	 */
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	public Page queryListByTelbillstatus(QueryBean query, Page page){
+		List<Object> pList = new ArrayList<Object>();
+		StringBuffer selectSql = new StringBuffer("");
+		selectSql.append("SELECT SM.DISPATCH_ID, " +//派工单号
+				"SM.CUSTOMER_ID, " +//客户ID
+				"SM.CUSTOMER_NAME, " +//客户名称
+				"SM.CUSTOMER_TAX_ID, " +//客户税号
+				"SM.TEL, " +//电话
+				"SM.CONTACT, " +//联系人
+				"nvl(SM.OFFICE_SPACE, '无') as OFFICE_SPACE, " +//地址
+				"SM.MOBILE, " +//手机
+				"CASE WHEN SM.SERVICE_TYPE_ID=1 THEN 1 		WHEN SM.SERVICE_TYPE_ID=4 THEN 2 	  WHEN SM.SERVICE_TYPE_ID=2 THEN (CASE WHEN SM.PRODUCT_ID = 8 THEN 3 		 WHEN SM.PRODUCT_ID = 729 THEN 4 ELSE 5 END) ELSE -1 END AS SERVICE_TYPE_FLAG,"+
+				"CASE WHEN SM.SERVICE_TYPE_ID=1 THEN '维护单' WHEN SM.SERVICE_TYPE_ID=4 THEN '回访单' WHEN SM.SERVICE_TYPE_ID=2 THEN (CASE WHEN SM.PRODUCT_ID = 8 THEN '企业安装单' WHEN SM.PRODUCT_ID = 729 THEN '防伪安装单' ELSE '其它安装单' END) ELSE '无' END AS SERVICE_TYPE_NAME,"+
+				"P.PRODUCT_NAME, " +//产品名称
+				"to_char(SM.RESERVATION, 'yyyy-MM-dd HH:mm:ss') AS RESERVATIONSTR, " +//预约时间
+				"to_char(SM.DIS_DATE, 'yyyy-MM-dd HH:mm:ss') AS DIS_DATESTR, " +//派工时间
+				"to_char(SM.ARRIVE_DATE, 'yyyy-MM-dd HH:mm:ss') AS ARRIVE_DATESTR, " +//签到时间
+				"to_char(SM.DONE_DATE, 'yyyy-MM-dd HH:mm:ss') AS DONE_DATESTR, " +//签退时间
+				"SM.DISPATCH_STATUS_ID," +//派工状态
+				"'" + query.getOpState() + "' AS OP_STATE" +//状态 
+				"");
+		StringBuffer fromSql = new StringBuffer(" FROM SM_DISPATCH SM, SYS_PRODUCT_TYPE P");
+		fromSql.append(" WHERE SM.PRODUCT_ID = P.PRODUCT_ID AND (SM.DISPATCH_STATUS_ID=6 OR SM.DISPATCH_STATUS_ID=8 OR SM.DISPATCH_STATUS_ID=9 OR SM.DISPATCH_STATUS_ID=10)"); 
+		fromSql.append(" AND (SM.SERVICE_TYPE_ID = 1 OR SM.SERVICE_TYPE_ID = 4 OR (SM.SERVICE_TYPE_ID=2 AND (SM.PRODUCT_ID = 8 OR SM.PRODUCT_ID = 729)))");
+		
+		if(StringUtils.isNotBlank(query.getProcesserId())){
+			fromSql.append(" AND SM.PROCESSER_ID = ?");
+			pList.add(query.getProcesserId());//服务人
+		}
+		if(StringUtils.isNotBlank(query.getStartDate())){
+			fromSql.append("AND TO_CHAR(SM.DIS_DATE,'YYYY-MM-DD')>=?");
+			pList.add(query.getStartDate());
+		}
+		if(StringUtils.isNotBlank(query.getEndDate())){
+			fromSql.append("AND TO_CHAR(SM.DIS_DATE,'YYYY-MM-DD')<=?");
+			pList.add(query.getEndDate());
+		}
+		if(null != query.getServiceTypeId()){//工单类型 
+			int SERVICE_TYPE_ID = query.getServiceTypeId().intValue();
+			if(1 == SERVICE_TYPE_ID || 2 == SERVICE_TYPE_ID || 3 == SERVICE_TYPE_ID || 4 == SERVICE_TYPE_ID){
+				fromSql.append(" AND SM.SERVICE_TYPE_ID = ?");
+				if(1 == SERVICE_TYPE_ID){//1维护单
+					pList.add(1);
+				}else if(2 == SERVICE_TYPE_ID){//2回访单
+					pList.add(4);
+				}else if(3 == SERVICE_TYPE_ID){//3防伪安装单
+					pList.add(2);
+					fromSql.append(" AND P.PRODUCT_ID = 729");
+				}else if(4 == SERVICE_TYPE_ID){//4企业安装单
+					pList.add(2);
+					fromSql.append(" AND P.PRODUCT_ID = 8");
+				}
+			}
+		}
+		if(StringUtils.isNotBlank(query.getQuery())){
+			fromSql.append(" AND (SM.CUSTOMER_NAME like ? or SM.CONTACT like ?  or SM.MOBILE like ?)");
+			pList.add("%"+query.getQuery()+"%");
+			pList.add("%"+query.getQuery()+"%");
+			pList.add("%"+query.getQuery()+"%");
+		}
+		String orderStr = "";
+		if(StringUtils.isNotBlank(query.getOpState())){
+			//排序
+			orderStr = " order by SM.RESERVATION asc";//预约时间
+			//工单状态
+			if("dispatch".equals(query.getOpState())){
+				fromSql.append(" AND SM.DISPATCH_STATUS_ID = 6");
+				if(1 == query.getOrderFlag()){
+					orderStr = " order by SM.DIS_DATE asc";//派工时间
+				}else if(2 == query.getOrderFlag()){
+					orderStr = " order by SM.OFFICE_SPACE asc";//地址
+				}
+			}else if("arrive".equals(query.getOpState())){
+				fromSql.append(" AND SM.DISPATCH_STATUS_ID = 8");
+				orderStr = " order by SM.ARRIVE_DATE asc";//签到时间
+			}else if("complete".equals(query.getOpState())){
+				fromSql.append(" AND SM.DISPATCH_STATUS_ID = 9");
+				orderStr = " order by SM.DONE_DATE asc";//签退时间
+			}else if("close".equals(query.getOpState())){
+				fromSql.append(" AND SM.DISPATCH_STATUS_ID = 10");
+				orderStr = " order by SM.DIS_DATE asc";//派工时间
+			}else{
+				fromSql.append(" AND SM.DISPATCH_STATUS_ID = -1");
+			}
+		}
+		StringBuffer queryCountSql = new StringBuffer("select count(*)").append(fromSql);
+		return baseJdbcDAO.showPage(selectSql.append(fromSql).append(orderStr).toString(), queryCountSql.toString(), pList.toArray(), page, SmDispatch.class);
+	}
+	
+	/*分类统计数据，case when 条件*/
+	public Map<String, Object> getCountByTelbillstatus(QueryBean query){
+		StringBuffer sql = new StringBuffer("");
+		sql.append(" select sum(case when sm.DISPATCH_STATUS_ID=6 then 1 else 0 end) as DISPATCH_NUM,"); //已派工
+		sql.append(" sum(case when sm.DISPATCH_STATUS_ID=8 then 1 else 0 end) as ARRIVE_NUM,"); //已上门
+		sql.append(" sum(case when sm.DISPATCH_STATUS_ID=9 then 1 else 0 end) as COMPLETE_NUM,"); //已完成
+		sql.append(" sum(case when sm.DISPATCH_STATUS_ID=10 then 1 else 0 end) as CLOSE_NUM"); //已结单
+		sql.append(" from SM_DISPATCH sm "); 
+		sql.append(" where SM.PROCESSER_ID = ? and (sm.DISPATCH_STATUS_ID=6 or sm.DISPATCH_STATUS_ID=8 or sm.DISPATCH_STATUS_ID=9 or sm.DISPATCH_STATUS_ID=10)"); 
+		sql.append(" and (SM.SERVICE_TYPE_ID = 1 or SM.SERVICE_TYPE_ID = 4 or (SM.SERVICE_TYPE_ID=2 and (SM.PRODUCT_ID = 8 or SM.PRODUCT_ID = 729)))");
+		List<Map<String, Object>> list = baseJdbcDAO.getJdbcTemplate().queryForList(sql.toString(), new Object[]{query.getProcesserId()});
+		return null==list||list.isEmpty()? null: list.get(0);
+	}
+	
+	
+=================================================================================
+SQL:sum  和  case when 
+	--工单首页：首页总览
+	select sum(case when sm.DISPATCH_STATUS_ID = 6 then 1 else 0 end) as DISPATCH_NUM,
+		   sum(case when sm.DISPATCH_STATUS_ID = 8 then 1 else 0 end) as ARRIVE_NUM,
+		   sum(case when sm.DISPATCH_STATUS_ID = 9 then 1 else 0 end) as COMPLETE_NUM,
+		   sum(case when sm.DISPATCH_STATUS_ID = 10 then 1 else 0 end) as CLOSE_NUM 
+	  from SM_DISPATCH sm where SM.PROCESSER_ID = 205333 and (sm.DISPATCH_STATUS_ID in(6,8,9,10)) 
+		   and (SM.SERVICE_TYPE_ID = 1 or SM.SERVICE_TYPE_ID = 4 or 
+				   (SM.SERVICE_TYPE_ID = 2 and (SM.PRODUCT_ID = 8 or SM.PRODUCT_ID = 729)));
+	select sum(decode(sm.DISPATCH_STATUS_ID, 6, 1, 0)) as DISPATCH_NUM,
+		   sum(decode(sm.DISPATCH_STATUS_ID, 8, 1, 0)) as ARRIVE_NUM,
+		   sum(decode(sm.DISPATCH_STATUS_ID, 9, 1, 0)) as COMPLETE_NUM,
+		   sum(decode(sm.DISPATCH_STATUS_ID, 10, 1, 0)) as CLOSE_NUM
+	  from SM_DISPATCH sm
+	  where SM.PROCESSER_ID = 205333
+		   and (sm.DISPATCH_STATUS_ID in(6,8,9,10))
+		   and (SM.SERVICE_TYPE_ID = 1 or SM.SERVICE_TYPE_ID = 4 or
+				   (SM.SERVICE_TYPE_ID = 2 and (SM.PRODUCT_ID = 8 or SM.PRODUCT_ID = 729)));
+--行政区划是否有子集
+select sao.administrative_organ_id,sao.administrative_organ_name,sao.parent_id,
+       case when sao.administrative_organ_id in (select a.parent_id from SYS_ADMINISTRATIVE_ORGAN a) then 1 else 0 end AS isParent
+       from SYS_ADMINISTRATIVE_ORGAN sao;--0.02秒
+select aa.administrative_organ_id,aa.administrative_organ_name,aa.parent_id,max(aa.pflag)      
+ from (select a.administrative_organ_id,a.administrative_organ_name,a.parent_id,case when b.administrative_organ_id is not null then 1 else 0 end as pflag
+ from SYS_ADMINISTRATIVE_ORGAN a
+ left join SYS_ADMINISTRATIVE_ORGAN b on a.administrative_organ_id = b.parent_id) aa
+ group by aa.administrative_organ_id,aa.administrative_organ_name,aa.parent_id;--0.01秒
+
+case when 和 decode 的相互转换
+--客户工单记录
+	SELECT ttt.*
+	  FROM (SELECT tt.*
+			  FROM (SELECT d.DISPATCH_ID,
+						   TO_CHAR(d.DIS_DATE, 'yyyy-MM-dd HH24:mi:ss') AS DIS_DATE,
+						   d.PRODUCT_ID,p.PRODUCT_NAME,d.SERVICE_TYPE_ID,
+						   CASE WHEN d.SERVICE_TYPE_ID = 1 THEN 1 WHEN d.SERVICE_TYPE_ID = 4 THEN 2
+								WHEN d.SERVICE_TYPE_ID = 2 THEN (CASE  WHEN d.PRODUCT_ID = 729 THEN 3
+																  WHEN d.PRODUCT_ID = 8 THEN 4 ELSE 5 END)
+								ELSE -1 END AS SERVICE_TYPE_FLAG,
+						   CASE WHEN d.SERVICE_TYPE_ID = 1 THEN '维护单' WHEN d.SERVICE_TYPE_ID = 4 THEN '回访单'
+								WHEN d.SERVICE_TYPE_ID = 2 THEN (CASE WHEN d.PRODUCT_ID = 729 THEN '防伪安装'
+																 WHEN d.PRODUCT_ID = 8 THEN '企业安装' ELSE '其它安装单' END)
+								ELSE '无' END AS SERVICE_TYPE_NAME,
+						   d.dispatch_status_id,
+						   CASE WHEN d.DISPATCH_STATUS_ID = 6 THEN '已派工' WHEN d.DISPATCH_STATUS_ID = 8 THEN '已上门'
+								WHEN d.DISPATCH_STATUS_ID = 9 THEN '已完成' WHEN d.DISPATCH_STATUS_ID = 10 THEN '已结单'
+								ELSE '' END AS STATUS_NAME,
+						   d.OFFICE_SPACE,d.PROCESSER_ID,e.NAME,an.SETUP_CASE,f.IS_SOFTWARE_IN
+					   FROM SM_DISPATCH d JOIN SYS_PRODUCT_TYPE p ON p.PRODUCT_ID = d.PRODUCT_ID
+						   JOIN SYS_EMPLOYEE e ON e.EMPLOYEE_ID = d.PROCESSER_ID
+						   LEFT JOIN SETUP_ANTITAX an on an.DISPATCH_ID = d.DISPATCH_ID
+						   LEFT JOIN SETUP_FISCALTAXALLINONE f ON f.DISPATCH_ID = d.DISPATCH_ID
+					  WHERE d.CUSTOMER_ID = 2985564 ORDER BY d.DIS_DATE DESC) tt
+			   WHERE tt.SERVICE_TYPE_FLAG in (1, 2, 3, 4) ORDER BY tt.DIS_DATE DESC) ttt
+	   WHERE ROWNUM < 11;
+	SELECT ttt.*
+	  FROM (SELECT tt.*
+			  FROM (SELECT d.DISPATCH_ID,
+						   TO_CHAR(d.DIS_DATE, 'yyyy-MM-dd HH24:mi:ss') AS DIS_DATE,
+						   d.PRODUCT_ID,p.PRODUCT_NAME,d.SERVICE_TYPE_ID,
+						   decode(d.SERVICE_TYPE_ID,1,1, 4,2, 2,decode(d.PRODUCT_ID,729,3, 8,4, 5), -1) AS SERVICE_TYPE_FLAG,
+						   decode(d.SERVICE_TYPE_ID,1,'维护单', 4,'回访单', 2,decode(d.PRODUCT_ID,729,'防伪安装', 8,'企业安装', '其它安装单'), '无') AS SERVICE_TYPE_NAME,
+						   d.dispatch_status_id,
+						   decode(d.DISPATCH_STATUS_ID,6,'已派工', 8,'已上门', 9,'已完成', 10,'已结单', '') AS STATUS_NAME,
+						   d.OFFICE_SPACE,d.PROCESSER_ID,e.NAME,an.SETUP_CASE,f.IS_SOFTWARE_IN
+					 FROM SM_DISPATCH d JOIN SYS_PRODUCT_TYPE p ON p.PRODUCT_ID = d.PRODUCT_ID
+						JOIN SYS_EMPLOYEE e ON e.EMPLOYEE_ID = d.PROCESSER_ID
+						LEFT JOIN SETUP_ANTITAX an on an.DISPATCH_ID = d.DISPATCH_ID
+						LEFT JOIN SETUP_FISCALTAXALLINONE f ON f.DISPATCH_ID = d.DISPATCH_ID
+					 WHERE d.CUSTOMER_ID = 2985564 ORDER BY d.DIS_DATE DESC) tt
+			   WHERE tt.SERVICE_TYPE_FLAG in (1, 2, 3, 4) ORDER BY tt.DIS_DATE DESC) ttt
+	  WHERE ROWNUM < 11;
+	  
+=================================================================================	  
+SQL建表建索引：
+1：
+-- Create table
+create table AOS_RMS_USER
+(
+  cguid          VARCHAR2(28) not null,
+  cname          VARCHAR2(100) not null,
+  cpwd           VARCHAR2(255),
+  crealname      VARCHAR2(255) not null,
+  cemp           VARCHAR2(18),
+  corgnid        VARCHAR2(18),
+  ienable        NUMBER(1) not null,
+  cusertype      VARCHAR2(18) not null,
+  cpwdtype       VARCHAR2(18) not null,
+  dnamestartdate VARCHAR2(23),
+  dnameenddate   VARCHAR2(23),
+  dpwdstartdate  VARCHAR2(23),
+  dpwdenddate    VARCHAR2(23),
+  iconcurrent    NUMBER(1),
+  ifirstlogin    NUMBER(1) default (1),
+  cauthtype      VARCHAR2(18),
+  cidentity      VARCHAR2(50),
+  iifloginsys    NUMBER(1) default (0),
+  cdescp         VARCHAR2(255),
+  isystemuser    NUMBER(1),
+  syn_data_mark  NUMBER(1)
+)
+tablespace CRM
+  pctfree 10
+  initrans 1
+  maxtrans 255
+  storage
+  (
+    initial 448K
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+-- Add comments to the columns 
+comment on column AOS_RMS_USER.syn_data_mark
+  is '数据同步标志(1:不同步)';
+-- Create/Recreate primary, unique and foreign key constraints 
+alter table AOS_RMS_USER
+  add constraint PK_AOS_USER primary key (CGUID)
+  using index 
+  tablespace CRM
+  pctfree 10
+  initrans 2
+  maxtrans 255
+  storage
+  (
+    initial 128K
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+alter table AOS_RMS_USER
+  add constraint IX_AOS_USER unique (CNAME)
+  using index 
+  tablespace CRM
+  pctfree 10
+  initrans 2
+  maxtrans 255
+  storage
+  (
+    initial 128K
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+alter table AOS_RMS_USER
+  add constraint AOS_RMS_USER_FK foreign key (CUSERTYPE)
+  references AOS_RMS_USERTYPE_CFG (CGUID);
+alter table AOS_RMS_USER
+  add constraint AOS_RMS_USER_FK2 foreign key (CPWDTYPE)
+  references AOS_RMS_PWDTYPE (CGUID);
+alter table AOS_RMS_USER
+  add constraint AOS_RMS_USER_FK4 foreign key (CAUTHTYPE)
+  references AOS_RMS_AUTHTYPE (CGUID);
+
+2：
+-- Create table
+create table CUS_ORG_CUSTOMER
+(
+  org_customer_id                NUMBER(14) not null,
+  cust_class_id                  NUMBER(9),
+  cust_tax_code                  VARCHAR2(50) not null,
+  create_date                    DATE not null,
+  notes                          VARCHAR2(3000 CHAR),
+  update_date                    DATE,
+  cust_name                      VARCHAR2(100) not null,
+  business_scope                 VARCHAR2(500),
+  account_bank                   VARCHAR2(150),
+  bank_account                   VARCHAR2(40),
+  legal_person                   VARCHAR2(40),
+  register_date                  DATE,
+  is_missing                     NUMBER(1) default 0,
+  is_valid                       NUMBER(1) default 1,
+  
+。。。  。。。
+
+  mer_commu                      VARCHAR2(100),
+  logout_note                    NUMBER(2),
+  backup_tax_code                VARCHAR2(50),
+  org_mer_id                     VARCHAR2(100 CHAR),
+  self_collection_name           VARCHAR2(50),
+  self_is_collection             NUMBER(1)
+)
+tablespace CRM
+  pctfree 10
+  initrans 1
+  maxtrans 255
+  storage
+  (
+    initial 865M
+    next 8K
+    minextents 1
+    maxextents unlimited
+  );
+-- Add comments to the table 
+comment on table CUS_ORG_CUSTOMER
+  is '组织客户表';
+-- Add comments to the columns 
+comment on column CUS_ORG_CUSTOMER.org_customer_id
+  is '客户ID';
+comment on column CUS_ORG_CUSTOMER.cust_class_id
+  is '客户类型ID';
+comment on column CUS_ORG_CUSTOMER.cust_tax_code
+  is '客户税号';
+comment on column CUS_ORG_CUSTOMER.tax_bureau_id
+  is '国税局ID';
+comment on column CUS_ORG_CUSTOMER.substation_id
+  is '国税分局/所ID';
+comment on column CUS_ORG_CUSTOMER.service_personal_id
+  is '管辖人ID';
+comment on column CUS_ORG_CUSTOMER.org_id
+  is '服务单位ID';
+comment on column CUS_ORG_CUSTOMER.create_date
+  is '创建日期';
+  
+。。。 。。。
+
+  is '接入方式';
+comment on column CUS_ORG_CUSTOMER.logout_note
+  is '注销原因 1 销户 2 转百旺';
+comment on column CUS_ORG_CUSTOMER.backup_tax_code
+  is '备份税号';
+comment on column CUS_ORG_CUSTOMER.org_mer_id
+  is '原系统商户ID';
+comment on column CUS_ORG_CUSTOMER.self_collection_name
+  is '托收银行账户名';
+comment on column CUS_ORG_CUSTOMER.self_is_collection
+  is '是否进行托收';
+-- Create/Recreate indexes 
+create index INX_CUS_CUST_NAME on CUS_ORG_CUSTOMER (CUST_NAME)
+  tablespace CRM
+  pctfree 10
+  initrans 2
+  maxtrans 255
+  storage
+  (
+    initial 87M
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+create index INX_CUS_CUST_REGIN on CUS_ORG_CUSTOMER (REGION_ID)
+  tablespace CRM
+  pctfree 10
+  initrans 2
+  maxtrans 255
+  storage
+  (
+    initial 35M
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+create index INX_CUS_ORG_CUSTOMER_CLASS_ID on CUS_ORG_CUSTOMER (CUST_CLASS_ID)
+  tablespace CRM
+  pctfree 10
+  initrans 2
+  maxtrans 255
+  storage
+  (
+    initial 32M
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+create index INX_CUS_ORG_CUSTOMER_ORG on CUS_ORG_CUSTOMER (ORG_ID)
+  tablespace CRM
+  pctfree 10
+  initrans 2
+  maxtrans 255
+  storage
+  (
+    initial 35M
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+create index INX_CUS_ORG_CUSTOMER_T6 on CUS_ORG_CUSTOMER (SUBSTR(CUST_TAX_CODE,LENGTH(CUST_TAX_CODE)-5))
+  tablespace CRM
+  pctfree 10
+  initrans 2
+  maxtrans 255
+  storage
+  (
+    initial 42M
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+create index INX_CUS_ORG_CUSTOMER_TAX on CUS_ORG_CUSTOMER (CUST_TAX_CODE)
+  tablespace CRM
+  pctfree 10
+  initrans 2
+  maxtrans 255
+  storage
+  (
+    initial 75M
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+create unique index PK_CUS_ORG_CUSTOMERID on CUS_ORG_CUSTOMER (CUST_TAX_CODE, ORG_ID)
+  tablespace CRM
+  pctfree 10
+  initrans 2
+  maxtrans 255
+  storage
+  (
+    initial 85M
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+-- Create/Recreate primary, unique and foreign key constraints 
+alter table CUS_ORG_CUSTOMER
+  add constraint PK_CUS_ORG_CUSTOMER primary key (ORG_CUSTOMER_ID)
+  using index 
+  tablespace CRM
+  pctfree 10
+  initrans 2
+  maxtrans 255
+  storage
+  (
+    initial 43M
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );  
+=================================================================================
+分组删选：
+--服务过的客户：同一个客户的记录显示最新的
+select distinct ORG_CUSTOMER_ID,CUST_NAME,ADDR,DIS_DATE
+  from (select rank() over(partition by temp.ORG_CUSTOMER_ID order by orderdate desc) rk,
+               temp.*
+          from (SELECT c.ORG_CUSTOMER_ID,
+                       c.CUST_NAME,
+                       s.OFFICE_SPACE AS ADDR,
+                       s.dis_date as orderdate,
+                       CASE
+                         WHEN TO_CHAR(s.DIS_DATE, 'yyyy-MM-dd') =
+                              TO_CHAR(SYSDATE, 'yyyy-MM-dd') THEN
+                          TO_CHAR(s.DIS_DATE, 'HH24:mi:ss')
+                         ELSE
+                          TO_CHAR(s.DIS_DATE, 'yyyy-MM-dd')
+                       END AS DIS_DATE
+                  FROM SM_DISPATCH s, CUS_ORG_CUSTOMER c
+                 WHERE c.ORG_CUSTOMER_ID = s.CUSTOMER_ID
+                   AND s.DISPATCH_STATUS_ID IN (9, 10)
+                   AND c.IS_VALID = 1
+                   AND s.IS_OVER = 0
+                   AND s.PROCESSER_ID = 205337
+                  -- AND (c.CUST_NAME LIKE ? OR c.CUST_NAME_PINYIN LIKE ?)
+                   AND TO_CHAR(s.DIS_DATE, 'YYYY-MM-DD HH24:mi:ss') >= '2017-03-01 00:00:00'
+                   AND TO_CHAR(s.DIS_DATE, 'YYYY-MM-DD HH24:mi:ss') <= '2017-03-25 23:59:59'
+                 ORDER BY DIS_DATE DESC) temp) t
+ where t.rk = 1
+ ORDER BY DIS_DATE DESC;
+=================================================================================
+/**
+ * 派工  Controller
+ *
+ */
+@Controller
+@RequestMapping(value="/crmapp/allow/smDispatchCtl",produces="text/plain;charset=utf-8")
+public class SmDispatchController extends BaseController{
+	@Autowired
+	private SmDispatchService smDispatchService;
+	/**
+	 * 首页总览
+	 * http://127.0.0.1:8080/CrmAppServer/crmapp/allow/smDispatchCtl/queryMain.do?cemp=200561
+	 */
+	@RequestMapping(value="/queryMain.do")
+	@ResponseBody
+	public String queryMain(QueryBean query, User user){
+		Map<String, Object> result = new HashMap<String, Object>();
+		result.put("result", false);
+		try {
+			query.setProcesserId(String.valueOf(user.getCemp()));
+			Map<String, Object> map = smDispatchService.getCountByTelbillstatus(query, user);
+			result.put("data", map);
+			result.put("result", true);
+		} catch (BaseRunException e) {
+			result.put("msg", e.getMessage());
+		} catch (Exception e) {
+			result.put("msg", e.getMessage());
+		}
+		return JSONObject.toJSONString(result);
+	}
+}
+=================================================================================
+javaBean的操作：
+可以用VO的方式，添加数据库中没有，但页面需要的现实的字段。例如根据服务方式Id来现实服务名称。
+public class PvVisitBill extends AbstractPvVisitBill{
+	private String product_name;
+	private Integer satisfaction;//满意度 很满意：2   满意：1   不满意：0
+	private Integer isChangeClientInfo;//是否修改地址 1：修改
+	private String service_evaluation_name;//服务总体评价 ：2很满意,1满意,0不满意
+	private String product_evaluation_name;//产品总体评价：2很满意,1满意,0不满意
+	
+	public String getProduct_evaluation_name() {
+		if(getProduct_evaluation() != null) {
+			long evaluation = getProduct_evaluation();
+			if(evaluation == 2) {
+				setProduct_evaluation_name("很满意");
+			}
+			if(evaluation == 1) {
+				setProduct_evaluation_name("满意");
+			}
+			if(evaluation == 0) {
+				setProduct_evaluation_name("不满意");
+			}
+		}
+		return product_evaluation_name;
+	}
+	public void setProduct_evaluation_name(String product_evaluation_name) {
+		this.product_evaluation_name = product_evaluation_name;
+	}
+	。。。。。。
+}
+=================================================================================
+修改数据库信息时，获取修改的SQL语句:
+	public int update(SmMaintain sm){
+		List<Object> params = new ArrayList<Object>();
+		Map<String, Object> notMap = new HashMap<String, Object>();
+		notMap.put("maintain_id", "maintain_id");
+		String sql = baseJdbcDAO.getUpdateSql("SM_MAINTAIN", "t", sm, AbstractSmMaintain.class, notMap, params);
+		sql += " where t.maintain_id = ?";
+		params.add(sm.getMaintain_id());
+		return baseJdbcDAO.getJdbcTemplate().update(sql, params.toArray());
+	}
+	@Repository
+	public class BaseJdbcDaoImpl implements BaseJdbcDAO{
+		@Autowired
+		private JdbcTemplate jdbcTemplate;
+		
+		public String getUpdateSql(String tableName,String byname,Object obj,Class c,Map<String,Object> notMap,List<Object> params) {
+			StringBuffer sqlBuffer = new StringBuffer("");
+			try {
+				Field[] fields = c.getDeclaredFields();//获取类中所有字段
+				if(fields != null) {
+					sqlBuffer.append("update ").append(tableName).append(" ").append(byname).append(" set ");
+					String fieldName = "";
+					for(Field field : Field) {
+						field.setAccessible(true);
+						fieldName = field.getName();					
+						if("serialVersionUID".equals(fieleName) || notMap.get(fieldName) != null) {
+							continue;
+						}
+						sqlBuffer.append(byname).append(".").append(fieldName).append(" = ?,");
+						params.add(field.get(obj));
+					}
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+			} 
+			String sql = sqlBuffer.toString();
+			if(sql.endWith(",")) {
+				sql = sql.substring(0,sql.length()-1);
+			}
+			return sql;
+		}
+	}
+=================================================================================
+静态注入：
+@Controller
+public class CheckVersionUtil {
+	
+	private static SelfCrmappVersionDao selfCrmappVersionDao;
+	
+	@Autowired
+	public void setSelfCrmappVersionDao(SelfCrmappVersionDao selfCrmappVersionDao) {
+		CheckVersionUtil.selfCrmappVersionDao = selfCrmappVersionDao;
+	}
+		
+	public static synchronized boolean checkVersion(String iosVersion,String androidVersion) {
+		boolean flag = false;
+		SelfCrmappVersion version = selfCrmappVersionDao.getVersion();
+		if(version == null) {
+			throw new BaseRunException("版本信息维护为空!");
+		}
+		if(StringUtils.isNotBlank(iosVersion) && version.getIosVersion().equals(iosVersion)) {
+			flag = true;
+		} else if(StringUtils.isNotBlank(androidVersion) && version.getIosVersion().equals(androidVersion)) {
+			flag = true;
+		}
+		return flag;
+	}
+}
+=================================================================================
+自定义异常类：
+public class BaseRunException extends RuntimeException{
+	private static final long serialVersionUID = 1L;
+	
+	private String msg;
+
+	public BaseRunException(String mess,Exception ex) {
+		super(mess,ex);
+		this.setMsg(mess);
+	}
+	public BaseRunException(String mess) {
+		super(mess);
+		this.setMsg(mess);
+	}
+	public String getMsg() {
+		return msg;
+	}
+
+	public void setMsg(String msg) {
+		if(StringUtils.isBlank(msg)){
+			msg="操作失败";
+		}
+		this.msg = msg;
+	}
+}
+
+=================================================================================
+
+=================================================================================
+
+=================================================================================
+
+=================================================================================
+
+=================================================================================
+
+=================================================================================
+		   
+		   
+		   
+		   
+		   
+		   
+		   
+		   
+		   
+		   
+		   
+		   
+		   
+		   
+		   
+		   
+		   
+		   
+		   
+		   
