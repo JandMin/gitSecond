@@ -676,7 +676,98 @@ public class BaseRunException extends RuntimeException{
 }
 
 =================================================================================
-
+单例模式 === 终极单例模式
+/**
+ * 饿汉法
+ * 代码简单，但无法做到延迟创建对象，增加了负载
+ * @author JandMin
+ */
+public class SingletonHungry {
+	private static SingletonHungry hungry= new SingletonHungry();
+	private SingletonHungry(){}
+	public static SingletonHungry getSingletonHungry(){
+		return hungry;
+	}
+}
+/**
+ * 懒汉式
+ * 实现了延迟加载，但是致命的弱点：线程不安全（虽然概率小，但是还是存在的）
+ */
+class SingletonLazy {
+	private static SingletonLazy lazy = null;
+	private SingletonLazy(){}
+	public static synchronized SingletonLazy getSingletonLazy(){
+		if(null == lazy){
+			lazy = new SingletonLazy();
+		}
+		return lazy;
+	}
+}
+/**
+ * 考虑线程安全的写法
+ * 对SingletonLazy的null判断以及new的部分使用synchronized进行加锁。
+ * 同时，对singleton对象使用volatile关键字进行限制，保证其对所有线程的可见性，并且禁止对其进行指令重排序优化。
+ * 但是，效率比较低。
+ * 因为每次调用getSingletonSafe()方法，都必须在synchronized这里进行排队，而真正需要new的情况是非常少的。
+ */
+class SingletonSafe{
+	private static volatile SingletonSafe safe = null;
+	private SingletonSafe(){}
+	public static SingletonSafe getSingletonSafe(){
+		synchronized (SingletonSafe.class){
+			if(null == safe){
+				safe = new SingletonSafe();
+			}
+		}
+		return safe;
+	}
+}
+/**
+ *兼顾安全和效率的写法
+ *这种写法双重检查，提升了并发度，提高了性能。（不能再jdk1.5之前的版本使用）
+ */
+class SingletonEfficient{
+	private static volatile SingletonEfficient efficient = null;
+	private SingletonEfficient(){}
+	public static SingletonEfficient getSingletonEfficient(){
+		if(null == efficient){
+			synchronized (SingletonEfficient.class){
+				if(null == efficient){
+					efficient = new SingletonEfficient();
+				}
+			}
+		}
+		return efficient;
+	}
+}
+/**
+ * 静态内部类法
+ * 写法简单，能够延时加载，并且保证线程安全(静态内部类只会被加载一次)
+ */
+class SingletonInner{
+	private static class Inner {
+		private static SingletonInner inner = new SingletonInner();
+	}
+	private SingletonInner(){}
+	public static SingletonInner getSingletonInner(){
+		return Inner.inner;
+	}
+}
+/**
+ * 枚举法
+ * 线程安全。
+ * 能够防止反射强行调用构造器，还能够自动序列化，防止反序列化的时候创建新的对象。(以上所有方法都没有解决这两个问题)
+ */
+enum Singleton{
+	INSTANCE;
+	private String singleton;
+	public String getSingleton(){
+		return singleton;
+	}
+	public void setSingleton(String singleton){
+		this.singleton = singleton;
+	}
+}
 =================================================================================
 
 =================================================================================
