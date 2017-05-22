@@ -518,6 +518,16 @@ select distinct ORG_CUSTOMER_ID,CUST_NAME,ADDR,DIS_DATE
  where t.rk = 1
  ORDER BY DIS_DATE DESC;
 =================================================================================
+--系统时间转换成Unix时间戳
+select sapi.position_time as create_time,sapi.longitude as longitude,sapi.latitude as latitude,sapi.position_nature as position_nature,sapi.location_place as position,sapi.self_dispath_address as dispath_address,
+       (sapi.position_time -TO_DATE('1970-01-01 00:00:00','yyyy-mm-dd hh24:mi:ss'))*86400 - TO_NUMBER(SUBSTR(TZ_OFFSET(sessiontimezone),1,3))*3600 as loc_time
+       from self_apk_position_info sapi 
+       where sapi.cname='hz3301180' and sapi.position_nature in (1,2)
+       and to_char(sapi.position_time,'yyyy-mm-dd hh24:mi:ss') between '2017-05-17 10:00:00' and '2017-05-17 17:00:00'
+       order by loc_time asc;
+
+=================================================================================
+
 /**
  * 派工  Controller
  *
