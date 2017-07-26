@@ -517,6 +517,41 @@ select distinct ORG_CUSTOMER_ID,CUST_NAME,ADDR,DIS_DATE
                  ORDER BY DIS_DATE DESC) temp) t
  where t.rk = 1
  ORDER BY DIS_DATE DESC;
+--获取每个分类点击量的前十名
+select vod_id, rec_val, cat1
+  from (select h.vod_id,
+               h.rec_val,
+               h.cat1,
+               rank() over(partition by cat1 order by WATCH_NUM desc) rk
+          from tableName h
+         where update_date = ''
+           and cat1 is not null
+           and cat1 <> '\\N') tt
+ where tt.rk < 11;
+--增量表：向table3中插入table1有table2没有的记录（比较的是所有字段）
+insert into table3
+  (result_id, redis_key, vod_id, rec_val, create_time, result_type)
+  select result_id, redis_key, vod_id, rec_val, create_time, '0'
+    from (select result_id, redis_key, vod_id, rec_val, create_time
+            from table1
+          minus
+          select result_id, redis_key, vod_id, rec_val, create_time
+            from table2);
+--增量表：向table3中插入table1有table2没有的记录（比较的是选择性的字段）  
+insert into table3
+  (result_id, redis_key, vod_id, rec_val, create_time, result_type)
+  select result_id, redis_key, vod_id, rec_val, create_time, '0'
+    from (select a.result_id,
+                 a.redis_key,
+                 a.vod_id,
+                 a.rec_val,
+                 a.create_time
+            from table1 a
+           where not exists (select 1
+                    from table2 b
+                   where a.redis_key = b.redis_key
+                     and a.vod_id = b.vod_id
+                     and a.rec_val = b.rec_val));
 =================================================================================
 --获取所属组织和下属组织
 select so.org_id,so.org_name,so.parent_org_id,so.ileaf
@@ -785,7 +820,34 @@ enum Singleton{
 	}
 }
 =================================================================================
-
+//读取本地Excle文件（主要后缀名最好是xsl）
+	public static void main(String[] args) {
+		List<MgPhoneCode> list = getExcelInfo("F:/phonesCode.xls");
+		System.out.println(list.size());
+	}
+	/**
+	 * @param file 本地文件绝对路径
+	 * @return 读取的结果集合，封装在实体类中
+	 */
+	private static List<MgPhoneCode> getExcelInfo(String file){
+		 List<MgPhoneCode> list=new ArrayList<MgPhoneCode>();
+	        try {
+	            Workbook rwb = Workbook.getWorkbook(new File(file));
+	            Sheet rs=rwb.getSheet(0);
+	            int clos=rs.getColumns();//获取所有列
+	            int rows=rs.getRows();//获取所有行
+	            System.out.println("clos:"+clos+" rows:"+rows);
+	            for (int i = 1; i < rows; i++) {	//列
+                    String phone = rs.getCell(0, i).getContents();
+                    String region=rs.getCell(1, i).getContents();                  
+                    //System.out.println("phone:"+phone+" region:"+region);
+                    list.add(new MgPhoneCode(phone,region));
+	            }
+	        } catch (Exception e) {
+	            e.printStackTrace();
+	        } 
+	        return list;
+	}
 =================================================================================
 
 =================================================================================
