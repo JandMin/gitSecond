@@ -234,7 +234,17 @@ case when 和 decode 的相互转换
 			   WHERE tt.SERVICE_TYPE_FLAG in (1, 2, 3, 4) ORDER BY tt.DIS_DATE DESC) ttt
 	  WHERE ROWNUM < 11;
 	  
-=================================================================================	  
+=================================================================================	
+/*数据库表被其它用户锁住*/ 
+--查看数据库锁,诊断锁的来源及类型：
+select object_id, session_id, locked_mode from v$locked_object;
+--找出数据库的serial#,以备杀死：
+select t2.username, t2.sid, t2.serial#, t2.logon_time
+  from v$locked_object t1, v$session t2
+ where t1.session_id = t2.sid
+ order by t2.logon_time;
+--杀死该session: 
+alter system kill session 'sid,serial#'; 
 SQL建表建索引：
 1：
 -- Create table
