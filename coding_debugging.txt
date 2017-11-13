@@ -158,8 +158,17 @@ SQL语句条件拼接
 		List<Map<String, Object>> list = baseJdbcDAO.getJdbcTemplate().queryForList(sql.toString(), new Object[]{query.getProcesserId()});
 		return null==list||list.isEmpty()? null: list.get(0);
 	}
-	
-	
+	/*按某个字段统计拼接其它字段*/
+	--字符串varcthar2最长4000
+	select redis_key,'['||listagg(vodid,',') within group (order by redis_key)||']' as vod_info
+       from (select redis_key,'{"vod_id":"'||vod_id||'","rec_val":"'||rec_val||'","weight_val":"'||weight_val
+       ||'","flock_id":"'||flock_id||'"}' as vodid from mg_result_20171010) 
+       group by redis_key;
+	--结果转成club类型，长度更长
+	select redis_key,'['||xmlagg(xmlparse(content vodid||',' wellformed) order by redis_key).getclobval()||']' as vod_info
+       from (select redis_key,'{"vod_id":"'||vod_id||'","rec_val":"'||rec_val||'","weight_val":"'||weight_val
+       ||'","flock_id":"'||flock_id||'"}' as vodid from mg_result_20171013) 
+       group by redis_key;
 =================================================================================
 SQL:sum  和  case when 
 	--工单首页：首页总览
@@ -562,6 +571,35 @@ insert into table3
                    where a.redis_key = b.redis_key
                      and a.vod_id = b.vod_id
                      and a.rec_val = b.rec_val));
+=================================================================================   
+rank()和 row_number的区别（用法是一样的）
+rank()碰到partition by后面的值相同时，序号保留一致，下一个直接跳过，比如：
+	vod_id, rec_val, cat1,rk
+1	38963854	71	MV	1
+2	39111262	59	MV	2
+3	39060627	29	MV	3
+4	38963909	23	MV	4
+5	38965141	17	MV	5
+6	39112347	14	MV	6
+7	38940534	14	MV	6
+8	38966512	9	MV	8
+9	39205418	8	MV	9
+10	38933785	8	MV	9
+11	39114623	8	MV	9
+12	39187139	8	MV	9
+13	38933752	8	MV	9
+row_number碰到partition by后面的值相同时的序号则会依次递增，比如：
+    vod_id, rec_val, cat1,rk
+1	38963854	71	MV	1
+2	39111262	59	MV	2
+3	39060627	29	MV	3
+4	38963909	23	MV	4
+5	38965141	17	MV	5
+6	39112347	14	MV	6
+7	38940534	14	MV	7
+8	38966512	9	MV	8
+9	39205418	8	MV	9
+10	38933785	8	MV	10
 =================================================================================
 --获取所属组织和下属组织
 select so.org_id,so.org_name,so.parent_org_id,so.ileaf
@@ -859,7 +897,177 @@ enum Singleton{
 	        return list;
 	}
 =================================================================================
-
+/*datatables加载表格案例*/
+var table;
+var tableInitPara = {
+		//自定义布局sdom：l- 每行显示的记录数;f- 搜索框;t- 表格;i- 表格信息;p- 分页条;r- 加载时的进度条
+    	"sDom":'<"top"f>rt<"bottom"ip<"clear">>',
+    	"bInfo": true,//隐藏底部左边文字
+    	"bLengthChange": false,//每页显示的记录数禁止操作
+    	"iDisplayLength": 10,//每页默认显示行数
+    	"bJQueryUI": false, //可以添加 jqury的ui theme  需要添加css   
+    	"aLengthMenu": [[10, 25, 50, -1, 0], ["每页10条", "每页25条", "每页50条", "全部", "不显"]], //设置每页显示记录的下拉菜单 
+    	"bPaginate": true,  //是否显示分页 
+    	"bFilter": true, //搜索栏
+    	"bAutoWidth": true,  //自适应宽度 
+    	"bProcessing" : true,  //显示“处理中...” 
+        "bServerSide" : false,  //开启服务端模式
+        "ajax" :  function(paraData,callback,settings){
+       	 	paraData.user = "aaaaaa";
+			$.ajax({
+				type:"POST",
+				url:"/mg_tacticsManage/tacticsController/listSmsTactics.do",
+				contentType:"application/json;charset=UTF-8",
+				cache:true,	//禁用缓存
+				data:paraData,	//传入参数
+				dataType:"json",
+				success:function(resu){
+					//setTimeout仅为测试遮罩效果
+					setTimeout(function() {
+						console.log(resu);
+						console.log(paraData);
+						//封装返回数据，这里仅演示了修改属性创建人
+						var returnData = {};
+						returnData.draw = resu.pageno;//这里直接自行返回了draw计数器，应该由后台返回
+						returnData.recordsTotal = resu.count;
+						returnData.recordsFiltered = resu.count;
+						for(var index in resu.dataTactics){
+							var tactics = resu.dataTactics[index];
+							if(tactics.create_id == "1"){
+								resu.dataTactics[index].create_id = "张三三";
+							} else if(tactics.create_id == "0"){
+								resu.dataTactics[index].create_id = "李思思";
+							} else {
+								resu.dataTactics[index].create_id = "王武武";
+							}
+							if(tactics.status == "0"){
+								resu.dataTactics[index].status = "草稿";
+							} else if(tactics.status == "1"){
+								resu.dataTactics[index].status = "执行中";
+							} else if(tactics.status == "2"){
+								resu.dataTactics[index].status = "结束";
+							} else {
+								resu.dataTactics[index].status = "未定义";
+							}
+							if(tactics.sendRate == "%"){
+								resu.dataTactics[index].sendRate = "-";
+							}
+						}
+						returnData.data = resu.dataTactics;
+						//关闭遮罩
+		                //$wrapper.spinModal(false);
+		                //调用DataTables提供的callback方法，代表数据已封装完成并传回DataTables进行渲染
+		                //此时的数据需确保正确无误，异常判断应在执行此回调前自行处理完毕
+		                console.log(returnData);
+		                callback(returnData);
+					},200);
+				  },
+				  error:function(XMLHttpRequest,textStatus,errorThrown){
+					  console.log("查询失败","查询失败！","error");
+					  alert("error");
+				  }
+			  });
+			},
+    	"columns" : [   
+    	               {data : null}, 
+    	               {data : "task_id"}, 
+    	               {data : "task_name"}, 
+    	               {data : "createTime"}, 
+    	               {data : "create_id"}, 
+    	               {data : "status"}, 
+    	               {data : "video_num"}, 
+    	               {data : "custom_target"}, 
+    	               {data : "custom_send"}, 
+    	               {data : "sendRate"},
+    	               {data : null}
+    	           ],
+    	"columnDefs":[
+    	              {"targets": [0,6,7,8,9],"bSearchable": false,},//参与搜索  
+    	              {
+    	                 "targets": [1],
+    	                 "visible": false,//隐藏列
+    	                 "searchable": false
+    	               },
+    	               { "orderable": false, "targets": [1,6]},//禁止排序
+    	               {
+    	                   "targets": -1,
+    	                   "class": "table_lastcol",
+    	                   "bSortable": false,
+    	                   "data": null,
+    	                   "defaultContent": "<div class='btn-group'>" +
+    	                   		"<button type='button' class='btn btn-default dropdown-toggle' " +
+    	                   		"data-toggle='dropdown'>操作 <span class='caret'></span></button>" +
+    	                   		"<ul class='dropdown-menu'><li><a href='#'>编辑</a></li>" +
+    	                   		"<li><a href='#'>查看</a></li>" +
+    	                   		"<li><a href='#'>停用</a></li>" +
+    	                   		"<li><a href='#'>删除</a></li></ul></div>"  //为最后一列添加按钮标签
+    	                   } 
+    	             ],
+         "order": [//默认排序
+                   [0, "asc"], 
+                   [4, "desc"]
+               ],
+         "sPaginationType": "full",//number:只有只有数字按钮,simple:只有上一页、下一页两个按钮,simple_numbers:除了上一页、下一页两个按钮还有页数按钮，Datatables默认是这个,full:有四个按钮首页、上一页、下一页、末页,full_numbers:除首页、上一页、下一页、末页四个按钮还有页数按钮,first_last_numbers:除首页、末页两个按钮还有页数按钮
+         "oLanguage": {
+             "sProcessing": "<img src='../img/loading.gif' width='20px'>  努力加载中...",
+             "sLengthMenu": "每页显示 _MENU_ 条记录",
+             "sZeroRecords": "抱歉， 查询不到任何相关数据",
+             "sInfo": " _START_-_END_条,共 _TOTAL_条",
+             "sInfoEmpty": "短信策略信息为空",
+             "sInfoFiltered": "数据表中共_MAX_条记录",
+             "sZeroRecords": "",
+             "sSearch": "",
+             "sUrl": "", //多语言配置文件，可将oLanguage的设置放在一个txt文件中，例：Javascript/datatable/dtCH.txt    
+             "oPaginate": {
+                 "sFirst": "<< 首页",
+                 "sPrevious": "< 上一页",
+                 "sNext": "下一页 >",
+                 "sLast": "尾页 >>"
+             }
+         }
+};
+$(document).ready( function () {
+    table = $('#table_smstactics').DataTable(tableInitPara);
+    
+    /*设置表格顶部搜索框一行的样式*/
+    //第一列添加索引
+    table.on('order.dt search.dt',
+    	    function() {
+    			table.column(0, {
+    	            search: 'applied',
+    	            order: 'applied'
+    	        }).nodes().each(function(cell, i) {
+    	            cell.innerHTML = i + 1;
+    	        });
+    	    }).draw();
+    //添加新建button
+    var button =  document.createElement("button");
+    button.className = "btn btn-lg btn-primary btn_create";
+    button.innerHTML = "+创建策略";
+    var smscreate_button = document.createElement("a");
+    smscreate_button.href = "./smscreate.html";
+    smscreate_button.appendChild(button);
+    //获取input框
+    var top_input = $("input")[0];
+    top_input.className = "input_search";
+    top_input.placeholder = "策略名称/创建人/创建时间/状态";
+    var input_parent = top_input.parentNode.parentNode;
+    input_parent.className = "input_search_label";
+    //添加搜索按钮
+    var search_img = document.createElement("img");
+    search_img.className = "btn_search_img";
+    search_img.src = "../img/btn_search.png";
+    var search_btn = document.createElement("div");
+    search_btn.className = "btn_search";
+    search_btn.appendChild(search_img);
+    var table_top = $(".top")[0];
+    table_top.appendChild(smscreate_button);
+    table_top.insertBefore(search_btn,input_parent);
+    /*设置表格底部分页一行的样式*/
+    var foot_page = $('.bottom')[0].childNodes;
+    var foot_page1 = foot_page[0];
+    foot_page1.className = "dataTables_info bottom_page1";
+});
 =================================================================================
 
 =================================================================================
