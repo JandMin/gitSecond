@@ -253,7 +253,17 @@ select t2.username, t2.sid, t2.serial#, t2.logon_time
  where t1.session_id = t2.sid
  order by t2.logon_time;
 --杀死该session: 
-alter system kill session 'sid,serial#'; 
+alter system kill session 'sid,serial#';
+eg:
+select t1.sid, t1.serial#, t1.username, t1.logon_time
+  from v$session t1, v$locked_object t2
+ where t1.sid = t2.session_id
+ order by t1.logon_time;
+alter system kill session '198,36603';
+--select,delete,update,insert的最新时间
+select max(ora_rowscn),to_char(scn_to_timestamp(max(ora_rowscn)),'yyyy-mm-dd hh24:mi:ss') from FM_REC_DATA;
+--create,alter,drop的最新时间
+select  TO_CHAR(LAST_DDL_TIME,'YYYY-MM-DD HH24:MI:SS') FROM user_objects where object_name='FM_REC_DATA';
 SQL建表建索引：
 1：
 -- Create table
