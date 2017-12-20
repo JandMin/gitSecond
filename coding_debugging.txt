@@ -615,7 +615,20 @@ row_number碰到partition by后面的值相同时的序号则会依次递增，�
 select so.org_id,so.org_name,so.parent_org_id,so.ileaf
   from SYS_ORG so where so.UIDVALIDITY=1
   start with so.org_id=2522 connect by prior org_id=parent_org_id;
-
+=================================================================================
+--full join
+select seq_summary_id.NextVal as summaryid,nvl(t1.tacticid,t2.tacticid) as tacticid,
+        nvl(t1.chn_adiv_id,t2.chn_adiv_id) as chn_adiv_id,nvl(t1.flockid,t2.flockid) as flockid,nvl(t1.num,0) as click_num,
+        nvl(t2.num,0) as exposure_num,to_char(sysdate,'yyyy-mm-dd')as date_time from (
+          select mvc.flockid,mvc.chn_adiv_id,mvc.tacticid,count(1) num 
+          from mg_vod_click_201712 mvc where to_char(mvc.create_time,'yyyy-mm-dd')=to_char(sysdate,'yyyy-mm-dd')
+          group by flockid,chn_adiv_id,tacticid
+         ) t1 full join (
+         select tt.flockid,tt.chn_adiv_id,tt.tacticid,count(1) num
+					from ( select mve.flockid,mve.chn_adiv_id,mve.tacticid,mve.record_id,count(1) a,rank() over(partition by mve.record_id order by mve.flockid) as rk
+				from mg_vod_exposure_201712 mve where to_char(mve.exposure_time,'yyyy-mm-dd')=to_char(sysdate,'yyyy-mm-dd') 
+					group by flockid,chn_adiv_id,tacticid,record_id ) tt where tt.rk=1 group by tt.flockid,tt.chn_adiv_id,tt.tacticid
+				) t2 on t1.flockid=t2.flockid and t1.tacticid=t2.tacticid and t1.chn_adiv_id=t2.chn_adiv_id;
 =================================================================================
 --系统时间转换成Unix时间戳
 select sapi.position_time as create_time,sapi.longitude as longitude,sapi.latitude as latitude,sapi.position_nature as position_nature,sapi.location_place as position,sapi.self_dispath_address as dispath_address,
@@ -626,7 +639,6 @@ select sapi.position_time as create_time,sapi.longitude as longitude,sapi.latitu
        order by loc_time asc;
 
 =================================================================================
-
 /**
  * 派工  Controller
  *
