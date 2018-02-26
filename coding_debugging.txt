@@ -27,6 +27,16 @@
 				cal.add(Calendar.DAY_OF_WEEK, n);
 				startDate = sdf.format(cal.getTime());
 			}
+			if("lastweek".equals(monthFlag)){//上周
+				Calendar cal1 = Calendar.getInstance();
+				 int dayOfWeek = cal.get(Calendar.DAY_OF_WEEK) - 1;  
+				 int offset1 = 1 - dayOfWeek;  
+				 int offset2 = 7 - dayOfWeek;  
+				 cal.add(Calendar.DATE, offset1 - 7); // last Monday  
+				 startDate = sdf.format(cal.getTime());  
+				 cal1.add(Calendar.DATE, offset2 - 7);// last Sunday  
+				 endDate = sdf.format(cal1.getTime());  
+			}
 			if("thismonth".equals(qv.getOrderDate())){//本月
 				cal.set(Calendar.DAY_OF_MONTH, 1);//设置当前月第一天
 				startDate = sdf.format(cal.getTime());
@@ -47,7 +57,15 @@
 			qv.setEndDate(endDate+" 23:59:59");
 		}
 	}
-	
+=================================================================================
+--最近30天
+select to_char(sysdate-31+rownum,'yyyymmdd') as date_time from dual
+       connect by rownum <=to_date(to_char(sysdate,'yyyymmdd'),'yyyymmdd')-to_date(to_char(sysdate-30,'yyyymmdd'),'yyyymmdd');
+--上月每一天      
+SELECT to_char(LAST_DAY(ADD_MONTHS(SYSDATE,-2))+ROWNUM,'yyyymmdd') as date_time FROM DUAL
+CONNECT BY ROWNUM <=trunc(LAST_DAY(ADD_MONTHS(SYSDATE, -1))-(LAST_DAY(ADD_MONTHS(SYSDATE, -2)) + 1))+1;
+--连续的数字
+select to_char(rownum-1) as hour_time from dual connect by rownum<=24;	
 =================================================================================
 SQL语句条件拼接
 	/**
@@ -1090,6 +1108,96 @@ $(document).ready( function () {
     var foot_page1 = foot_page[0];
     foot_page1.className = "dataTables_info bottom_page1";
 });
+=================================================================================
+--获取系统的连续时间
+select to_char(sysdate-30+rownum,'yyyymmdd') as date_time from dual
+ connect by rownum <=to_date(to_char(sysdate,'yyyymmdd'),'yyyymmdd')-to_date(to_char(sysdate-30,'yyyymmdd'),'yyyymmdd');
+=================================================================================
+--查找端口被占用
+1、打开CMD--命令窗口
+2、命令：netstat -ano
+  TCP    10.73.130.28:60830     120.199.69.48:443      ESTABLISHED     13664
+  TCP    127.0.0.1:4300         0.0.0.0:0              LISTENING       13104
+  TCP    127.0.0.1:4301         0.0.0.0:0              LISTENING       13104
+  TCP    127.0.0.1:5037         0.0.0.0:0              LISTENING       13612
+  TCP    127.0.0.1:8088         0.0.0.0:0              LISTENING       13572			<------
+  TCP    127.0.0.1:31203        0.0.0.0:0              LISTENING       14908
+  TCP    127.0.0.1:59407        0.0.0.0:0              LISTENING       12764
+  TCP    127.0.0.1:59483        0.0.0.0:0              LISTENING       5712
+  TCP    127.0.0.1:60012        0.0.0.0:0              LISTENING       412
+  TCP    127.0.0.1:65000        0.0.0.0:0              LISTENING       3540
+  TCP    [::]:135               [::]:0                 LISTENING       592
+  TCP    [::]:445               [::]:0                 LISTENING       4
+  TCP    [::]:5357              [::]:0                 LISTENING       4
+  TCP    [::]:49664             [::]:0                 LISTENING       736
+3、命令：netstat -aon|findstr "13572"
+  TCP    10.73.130.28:59443     223.99.251.243:7534    ESTABLISHED     13572
+  TCP    10.73.130.28:59507     112.13.64.14:80        CLOSE_WAIT      13572
+  TCP    127.0.0.1:8088         0.0.0.0:0              LISTENING       13572
+4、命令：tasklist|findstr "13572"
+  QyFragment.exe               13572 Console                    8     29,592 K
+  
+=================================================================================
+--查询表中重复的记录数
+select * from VOD_SIT_MERGE vsm where vsm.vodid in (select vodid from VOD_SIT_MERGE group by vodid having count(vodid) > 1) order by vodid
+--删除表中多余的重复记录，重复记录是根据单个字段（Id）来判断，只留有rowid最小的记录
+DELETE from VOD_SIT_MERGE WHERE
+  vodid IN (SELECT vodid FROM VOD_SIT_MERGE GROUP BY vodid HAVING COUNT(vodid) > 1) 
+  AND ROWID NOT IN (SELECT MIN(ROWID) FROM VOD_SIT_MERGE GROUP BY vodid HAVING COUNT(*) > 1);
+=================================================================================
+wm_concat函数
+该函数可以把列值以","号分隔起来,并显示成一行
+
+select wm_concat(m.operation_name) as names,wm_concat(m.operation_id) as ids from mg_operation m;--结果时CLOB类型
+--猜你喜欢,短视频,小伙伴正在看,为我推荐    1,2,3,4
+
+select replace(wm_concat(m.operation_name),',','|') as names,replace(wm_concat(m.operation_id),',','|') as ids from mg_operation m;
+--猜你喜欢|短视频|小伙伴正在看|为我推荐   1|2|3|4
+
+select hrd.cat1,wm_concat(vod_id) from hot_rec_data hrd group by cat1;
+=================================================================================
+行转列
+select * from (select mo.operation_name,moo.p_day,moo.rec_exp_times
+ from mg_operation mo left join MIGU_ONLINE_STATS_ORACLE moo on mo.operation_id=moo.loc_id)
+ pivot (sum(rec_exp_times) for operation_name in ('猜你喜欢' 猜你喜欢,'短视频' 短视频,'为我推荐' 为我推荐,'小伙伴正在看' 小伙伴正在看)) order by p_day desc;
+多行转多列
+select * from MIGU_APP_ONLINE_EVAL_PLAN ma;
+select sorted,regexp_substr(exposure,'[^|]+',1,1,'i') AS exp_num,regexp_substr(exposure,'[^|]+',1,2,'i') AS clk_num,regexp_substr(exposure,'[^|]+',1,3,'i') AS rate from (
+ select sorted,exposure from (
+  select nvl(sum(ma.exp_times),0)||'|'||nvl(sum(ma.clk_times),0)||'|'||decode(nvl(sum(ma.exp_times),0),0,'0%',to_char(round(nvl(sum(ma.clk_times),0)/sum(ma.exp_times),4)*100,'fm9999990.9999')||'%') as 总数,
+  nvl(sum(ma.exp_bill_cnt),0)||'|'||nvl(sum(ma.clk_bill_cnt),0)||'|'||decode(nvl(sum(ma.exp_bill_cnt),0),0,'0%',to_char(round(nvl(sum(ma.clk_bill_cnt),0)/sum(ma.exp_bill_cnt),4)*100,'fm9999990.9999')||'%') as 人次,
+  nvl(sum(ma.mv_exp_times),0)||'|'|| nvl(sum(ma.mv_clk_times),0)||'|'||decode(nvl(sum(ma.mv_exp_times),0),0,'0%',to_char(round(nvl(sum(ma.mv_clk_times),0)/sum(ma.mv_exp_times),4)*100,'fm9999990.9999')||'%') as 电影,
+  nvl(sum(ma.tv_exp_times),0)||'|'|| nvl(sum(ma.tv_clk_times),0)||'|'||decode(nvl(sum(ma.tv_exp_times),0),0,'0%',to_char(round(nvl(sum(ma.tv_clk_times),0)/sum(ma.tv_exp_times),4)*100,'fm9999990.9999')||'%') as 电视剧,
+  nvl(sum(ma.com_exp_times),0)||'|'||nvl(sum(ma.com_clk_times),0)||'|'||decode(nvl(sum(ma.com_exp_times),0),0,'0%',to_char(round(nvl(sum(ma.com_clk_times),0)/sum(ma.com_exp_times),4)*100,'fm9999990.9999')||'%') as 动漫,
+  nvl(sum(ma.rs_exp_times),0)||'|'||nvl(sum(ma.rs_clk_times),0)||'|'||decode(nvl(sum(ma.rs_exp_times),0),0,'0%',to_char(round(nvl(sum(ma.rs_clk_times),0)/sum(ma.rs_exp_times),4)*100,'fm9999990.9999')||'%') as 综艺 
+  from MIGU_APP_ONLINE_EVAL_PLAN ma where ma.loc_id='1' and to_date(ma.updateday,'yyyymmdd')>=to_date('2018-01-01','yyyy-mm-dd')
+ ) unpivot (exposure for sorted in (总数,人次,电影,电视剧,动漫,综艺))
+) tt;
+--一样的效果
+select '总数' as sorted,nvl(sum(ma.exp_times),0) as exp_num,nvl(sum(ma.clk_times),0) as clk_times,decode(nvl(sum(ma.exp_times),0),0,'0%',to_char(round(nvl(sum(ma.clk_times),0)/sum(ma.exp_times),4)*100,'fm9999990.9999')||'%') as rate from MIGU_APP_ONLINE_EVAL_PLAN ma where ma.loc_id='1' and to_date(ma.updateday,'yyyymmdd')>=to_date('2018-01-01','yyyy-mm-dd')
+union all
+select '人次' as sorted,nvl(sum(ma.exp_bill_cnt),0) as exp_num,nvl(sum(ma.clk_bill_cnt),0) as clk_num,decode(nvl(sum(ma.exp_bill_cnt),0),0,'0%',to_char(round(nvl(sum(ma.clk_bill_cnt),0)/sum(ma.exp_bill_cnt),4)*100,'fm9999990.9999')||'%') as rate from MIGU_APP_ONLINE_EVAL_PLAN ma where ma.loc_id='1' and to_date(ma.updateday,'yyyymmdd')>=to_date('2018-01-01','yyyy-mm-dd')
+union all
+select '电影' as sorted,nvl(sum(ma.mv_exp_times),0) as exp_num,nvl(sum(ma.mv_clk_times),0) as clk_num,decode(nvl(sum(ma.mv_exp_times),0),0,'0%',to_char(round(nvl(sum(ma.mv_clk_times),0)/sum(ma.mv_exp_times),4)*100,'fm9999990.9999')||'%') as rate from MIGU_APP_ONLINE_EVAL_PLAN ma where ma.loc_id='1' and to_date(ma.updateday,'yyyymmdd')>=to_date('2018-01-01','yyyy-mm-dd')
+union all
+select '电视剧' as sorted,nvl(sum(ma.tv_exp_times),0) as exp_num,nvl(sum(ma.tv_clk_times),0) as clk_num,decode(nvl(sum(ma.tv_exp_times),0),0,'0%',to_char(round(nvl(sum(ma.tv_clk_times),0)/sum(ma.tv_exp_times),4)*100,'fm9999990.9999')||'%') as rate from MIGU_APP_ONLINE_EVAL_PLAN ma where ma.loc_id='1' and to_date(ma.updateday,'yyyymmdd')>=to_date('2018-01-01','yyyy-mm-dd')
+union all
+select '动漫' as sorted,nvl(sum(ma.com_exp_times),0) as exp_num,nvl(sum(ma.com_clk_times),0) as clk_num,decode(nvl(sum(ma.com_exp_times),0),0,'0%',to_char(round(nvl(sum(ma.com_clk_times),0)/sum(ma.com_exp_times),4)*100,'fm9999990.9999')||'%') as rate from MIGU_APP_ONLINE_EVAL_PLAN ma where ma.loc_id='1' and to_date(ma.updateday,'yyyymmdd')>=to_date('2018-01-01','yyyy-mm-dd')
+union all
+select '综艺' as sorted,nvl(sum(ma.rs_exp_times),0) as exp_num,nvl(sum(ma.rs_clk_times),0) as clk_num,decode(nvl(sum(ma.rs_exp_times),0),0,'0%',to_char(round(nvl(sum(ma.rs_clk_times),0)/sum(ma.rs_exp_times),4)*100,'fm9999990.9999')||'%') as rate from MIGU_APP_ONLINE_EVAL_PLAN ma where ma.loc_id='1' and to_date(ma.updateday,'yyyymmdd')>=to_date('2018-01-01','yyyy-mm-dd');
+
+=================================================================================
+
+=================================================================================
+
+=================================================================================
+
+=================================================================================
+
+=================================================================================
+
+=================================================================================
+
 =================================================================================
 
 =================================================================================
