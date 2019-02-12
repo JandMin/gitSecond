@@ -1,4 +1,4 @@
-﻿aaa
+﻿
 =================================================================================
 获取时间：本周、本月、上个月、前三个月     Calendar
 	/**
@@ -1187,6 +1187,23 @@ union all
 select '综艺' as sorted,nvl(sum(ma.rs_exp_times),0) as exp_num,nvl(sum(ma.rs_clk_times),0) as clk_num,decode(nvl(sum(ma.rs_exp_times),0),0,'0%',to_char(round(nvl(sum(ma.rs_clk_times),0)/sum(ma.rs_exp_times),4)*100,'fm9999990.9999')||'%') as rate from MIGU_APP_ONLINE_EVAL_PLAN ma where ma.loc_id='1' and to_date(ma.updateday,'yyyymmdd')>=to_date('2018-01-01','yyyy-mm-dd');
 
 =================================================================================
+MySQL
+-- 创建表
+DROP table if exists tbl_user_activity;
+CREATE TABLE `tbl_user_activity` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+	`user_id` bigint(20) COMMENT '用户ID',
+	`activity_id` bigint(20) COMMENT '活动ID',
+	`invite_user_id` bigint(20) COMMENT '邀请人ID',
+    `user_type` SMALLINT(1) COMMENT '用户类型：0-虚拟用户，1-真实用户',
+	`draw_type` SMALLINT(2) COMMENT '中奖状态 0-未中奖 1-中奖',
+	`create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=0 DEFAULT CHARSET=utf8 COMMENT='用户活动表';
+
+-- 增加字段
+alter table provider_app add bd VARCHAR(255) COMMENT 'info_app_msg原广告表字段:salecode';
+
 
 =================================================================================
 
